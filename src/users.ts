@@ -1,10 +1,10 @@
-import { Context, Messenger, ParseMode } from './interfaces';
-import cache from './cache';
-import * as llm from './addons/llm';
-import * as db from './db';
-import { strictEscape as esc, reply, sendMessage } from './middleware';
-import { ISupportee } from './db';
-import * as log from 'fancy-log'
+import { Context, Messenger, ParseMode } from "./interfaces";
+import cache from "./cache";
+import * as llm from "./addons/llm";
+import * as db from "./db";
+import { strictEscape as esc, reply, sendMessage } from "./middleware";
+import { ISupportee } from "./db";
+import * as log from "fancy-log";
 
 const TIME_BETWEEN_CONFIRMATION_MESSAGES = 86400000; // 24 hours
 
@@ -21,18 +21,23 @@ const TIME_BETWEEN_CONFIRMATION_MESSAGES = 86400000; // 24 hours
 function formatMessageAsTicket(
   ticket: { toString: () => string },
   ctx: Context,
-  autoReplyInfo?: any,
+  autoReplyInfo?: any
 ): string {
   const { config, userId } = cache;
-  var name = `[${esc(ctx.message.from.first_name,)}](tg://user?id=${userId})`;
-  if (config.anonymous_tickets || config.staffchat_parse_mode === ParseMode.PLAINTEXT) {
+  var name = `[${esc(ctx.message.from.first_name)}](tg://user?id=${userId})`;
+  if (
+    config.anonymous_tickets ||
+    config.staffchat_parse_mode === ParseMode.PLAINTEXT
+  ) {
     name = ctx.message.from.first_name;
   }
-  return `${config.language.ticket} #T${ticket
-    .toString()
-    .padStart(6, '0')} ${config.language.from} ${name} ${config.language.language}: ${ctx.message.from.language_code} ${ctx.session.groupTag}\n\n${esc(
-      ctx.message.text,
-    )}\n\n${autoReplyInfo ? `*${autoReplyInfo}*` : ''}`;
+  return `${config.language.ticket} #T${ticket.toString().padStart(6, "0")} ${
+    config.language.from
+  } ${name} ${config.language.language}: ${ctx.message.from.language_code} ${
+    ctx.session.groupTag
+  }\n\n${esc(ctx.message.text)}\n\n${
+    autoReplyInfo ? `*${autoReplyInfo}*` : ""
+  }`;
 }
 
 /**
@@ -47,7 +52,11 @@ function createAutoReplyMessage(msg: string, ctx: Context): string {
   const senderName = ctx.message.from.first_name;
   return config.clean_replies
     ? msg
-    : `${config.language.dear} ${esc(senderName)},\n\n${msg}\n\n${config.language.regards}\n${config.language.automatedReplyAuthor}\n\n*${config.language.automatedReply}*`;
+    : `${config.language.dear} ${esc(senderName)},\n\n${msg}\n\n${
+        config.language.regards
+      }\n${config.language.automatedReplyAuthor}\n\n*${
+        config.language.automatedReply
+      }*`;
 }
 
 /**
@@ -56,31 +65,32 @@ function createAutoReplyMessage(msg: string, ctx: Context): string {
  * @param ctx - Bot context.
  * @returns True if an auto-reply was sent; otherwise, false.
  */
-async function autoReply(ctx: Context): Promise<boolean> {
+async function autoReply(ctx: Context): Promise<string | null> {
   const {
     config: { autoreply, use_llm },
   } = cache;
   const messageText = ctx.message.text.toString();
 
   if (autoreply && autoreply.length > 0 && autoreply.at(0)?.question) {
-    // Check common auto-reply questions
     for (const autoReplyItem of autoreply) {
       if (messageText.includes(autoReplyItem.question)) {
-        reply(ctx, createAutoReplyMessage(autoReplyItem.answer, ctx));
-        return true;
+        const replyMsg = createAutoReplyMessage(autoReplyItem.answer, ctx);
+        reply(ctx, replyMsg);
+        return replyMsg; // return the actual text sent
       }
     }
   }
 
-  // Fallback to LLM response if enabled
   if (use_llm) {
     const response = await llm.getResponseFromLLM(ctx);
     if (response !== null) {
-      reply(ctx, createAutoReplyMessage(response, ctx));
-      return true;
+      const replyMsg = createAutoReplyMessage(response, ctx);
+      reply(ctx, replyMsg);
+      return replyMsg;
     }
   }
-  return false;
+
+  return null;
 }
 
 /**
@@ -95,7 +105,7 @@ async function processTicket(
   ticket: ISupportee,
   ctx: Context,
   chatId: string,
-  autoReplyInfo?: string,
+  autoReplyInfo?: string
 ) {
   const { config } = cache;
   // Send confirmation if applicable
@@ -103,15 +113,18 @@ async function processTicket(
     !autoReplyInfo &&
     config.autoreply_confirmation &&
     (ctx.session.lastContactDate === undefined ||
-      ctx.session.lastContactDate < Date.now() - TIME_BETWEEN_CONFIRMATION_MESSAGES)
+      ctx.session.lastContactDate <
+        Date.now() - TIME_BETWEEN_CONFIRMATION_MESSAGES)
   ) {
     ctx.session.lastContactDate = Date.now();
     const confirmationMsg =
       config.language.confirmationMessage +
-      '\n' +
+      "\n" +
       (config.show_user_ticket
-        ? `${config.language.ticket} #T${ticket.ticketId.toString().padStart(6, '0')}`
-        : '');
+        ? `${config.language.ticket} #T${ticket.ticketId
+            .toString()
+            .padStart(6, "0")}`
+        : "");
     sendMessage(chatId, ticket.messenger, confirmationMsg);
   }
 
@@ -119,11 +132,7 @@ async function processTicket(
   const messageId = await sendMessage(
     config.staffchat_id,
     config.staffchat_type,
-    formatMessageAsTicket(
-      ticket.ticketId,
-      ctx,
-      autoReplyInfo,
-    ),
+    formatMessageAsTicket(ticket.ticketId, ctx, autoReplyInfo)
   );
   db.addIdAndName(ticket.ticketId, messageId, ctx.message.from.first_name);
 
@@ -131,40 +140,36 @@ async function processTicket(
   if (ctx.session.group && ctx.session.group !== config.staffchat_id) {
     const groupOptions = config.allow_private
       ? {
-        parse_mode: 'none',
-        reply_markup: {
-          html: '',
-          inline_keyboard: [
-            [
-              {
-                text: config.language.replyPrivate,
-                callback_data:
-                  ctx.from.id +
-                  '---' +
-                  ctx.message.from.first_name +
-                  '---' +
-                  ctx.session.groupCategory +
-                  '---' +
-                  ticket.ticketId,
-              },
+          parse_mode: "none",
+          reply_markup: {
+            html: "",
+            inline_keyboard: [
+              [
+                {
+                  text: config.language.replyPrivate,
+                  callback_data:
+                    ctx.from.id +
+                    "---" +
+                    ctx.message.from.first_name +
+                    "---" +
+                    ctx.session.groupCategory +
+                    "---" +
+                    ticket.ticketId,
+                },
+              ],
             ],
-          ],
-        },
-      }
+          },
+        }
       : { parse_mode: config.parse_mode };
 
     sendMessage(
       ctx.session.group,
       ticket.messenger,
-      formatMessageAsTicket(
-        ticket.ticketId,
-        ctx,
-        autoReplyInfo,
-      ),
-      groupOptions,
+      formatMessageAsTicket(ticket.ticketId, ctx, autoReplyInfo),
+      groupOptions
     );
   }
-};
+}
 
 /**
  * Handles ticket processing with spam protection.
@@ -175,9 +180,12 @@ async function processTicket(
 async function chat(ctx: Context, chat: { id: string }) {
   const { config } = cache;
   cache.userId = ctx.message.from.id;
-  const isAutoReply = await autoReply(ctx);
+  const autoReplyMsg = await autoReply(ctx);
+  const isAutoReply = !!autoReplyMsg;
   if (isAutoReply && !config.show_auto_replied) return;
-  const autoReplyInfo = isAutoReply ? config.language.automatedReplySent : undefined;
+  const autoReplyInfo = isAutoReply
+    ? config.language.automatedReplySent + " Message: " + autoReplyMsg
+    : undefined;
 
   // Ensure the user's ticket is tracked
   if (cache.ticketIDs[cache.userId] === undefined) {
@@ -187,7 +195,10 @@ async function chat(ctx: Context, chat: { id: string }) {
 
   // If no ticket has been sent yet, fetch from DB and set up spam timer
   if (cache.ticketSent[cache.userId] === undefined) {
-    const ticket = await db.getTicketByUserId(chat.id, ctx.session.groupCategory);
+    const ticket = await db.getTicketByUserId(
+      chat.id,
+      ctx.session.groupCategory
+    );
     processTicket(ticket, ctx, chat.id, autoReplyInfo);
 
     // Prevent multiple notifications for a period defined by spam_time
@@ -197,25 +208,20 @@ async function chat(ctx: Context, chat: { id: string }) {
     cache.ticketSent[cache.userId] = 0;
   } else if (cache.ticketSent[cache.userId] < config.spam_cant_msg) {
     cache.ticketSent[cache.userId]++;
-    const ticket = await db.getTicketByUserId(cache.userId, ctx.session.groupCategory);
+    const ticket = await db.getTicketByUserId(
+      cache.userId,
+      ctx.session.groupCategory
+    );
     sendMessage(
       config.staffchat_id,
       config.staffchat_type,
-      formatMessageAsTicket(
-        ticket.ticketId,
-        ctx,
-        autoReplyInfo,
-      ),
+      formatMessageAsTicket(ticket.ticketId, ctx, autoReplyInfo)
     );
     if (ctx.session.group && ctx.session.group !== config.staffchat_id) {
       sendMessage(
         ctx.session.group,
         ticket.messenger,
-        formatMessageAsTicket(
-          ticket.ticketId,
-          ctx,
-          autoReplyInfo,
-        ),
+        formatMessageAsTicket(ticket.ticketId, ctx, autoReplyInfo)
       );
     }
   } else if (cache.ticketSent[cache.userId] === config.spam_cant_msg) {
@@ -224,14 +230,11 @@ async function chat(ctx: Context, chat: { id: string }) {
   }
 
   // Log the ticket message for debugging
-  const ticket = await db.getTicketByUserId(cache.userId, ctx.session.groupCategory)
-  log.info(
-    formatMessageAsTicket(
-      ticket.ticketId,
-      ctx,
-      autoReplyInfo,
-    ),
+  const ticket = await db.getTicketByUserId(
+    cache.userId,
+    ctx.session.groupCategory
   );
+  log.info(formatMessageAsTicket(ticket.ticketId, ctx, autoReplyInfo));
 }
 
 export { chat };
